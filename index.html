@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WRITING SHINE 4</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f4f7f6;
+      color: #2d3436;
+      max-width: 780px;
+      margin: 40px auto;
+      padding: 0 20px;
+    }
+    h1 {
+      text-align: center;
+      color: #0984e3;
+      margin-bottom: 24px;
+    }
+    #search-box {
+      width: 100%;
+      padding: 12px 16px;
+      margin-bottom: 28px;
+      border: 1px solid #dfe6e9;
+      border-radius: 10px;
+      font-size: 16px;
+      box-sizing: border-box;
+      outline: none;
+      background: #fff;
+    }
+    #search-box:focus {
+      border-color: #0984e3;
+    }
+    .group-section {
+      margin-bottom: 32px;
+    }
+    .group-title {
+      font-size: 18px;
+      font-weight: 700;
+      color: #2d3436;
+      border-left: 4px solid #0984e3;
+      padding-left: 12px;
+      margin-bottom: 14px;
+    }
+    .file-list {
+      list-style: none;
+      padding: 0;
+      display: grid;
+      gap: 10px;
+    }
+    .file-item a {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #ffffff;
+      padding: 14px 18px;
+      border-radius: 10px;
+      text-decoration: none;
+      color: #2d3436;
+      font-weight: 500;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .file-item a:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(9, 132, 227, 0.15);
+      color: #0984e3;
+    }
+    .badge {
+      background: #e1f0ff;
+      color: #0984e3;
+      font-size: 12px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+    #status {
+      text-align: center;
+      color: #636e72;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>WRITING SHINE 4</h1>
+  <input type="text" id="search-box" placeholder="Tìm kiếm tên file hoặc tên nhóm...">
+  <div id="status">Đang tải danh sách theo nhóm...</div>
+  <div id="groups-container"></div>
+
+  <script>
+    // Tùy chỉnh tên hiển thị đẹp cho từng thư mục nhóm (bên trái là tên thư mục trên GitHub)
+    const GROUP_LABELS = {
+      "root": "Tài liệu chung",
+      "lop-4": "Lớp 4",
+      "lop-6": "Lớp 6",
+      "reading": "Đọc hiểu"
+    };
+
+    const hostParts = window.location.hostname.split('.');
+    const pathParts = window.location.pathname.split('/').filter(Boolean);
+    const owner = hostParts[0];
+    const repo = pathParts[0];
+
+    const containerEl = document.getElementById('groups-container');
+    const statusEl = document.getElementById('status');
+    const searchBox = document.getElementById('search-box');
+    let groupedItems = []; // [{ groupKey, groupLabel, name, path }]
+
+    async function scanPath(path = "") {
+      const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+      const res = await fetch(url);
+      if (!res.ok) return [];
+      const entries = await res.json();
+      let results = [];
+
+      for (const entry of entries) {
+        if (entry.type === "dir") {
+          const subResults = await scanPath(entry.path);
+          results = results.concat(subResults);
+        } else if (
+          entry.type === "file" &&
+          (entry.name.endsWith(".html") || entry.name.endsWith(".htm")) &&
+          entry.path.toLowerCase() !== "index.html"
+        ) {
+          const parts = entry.path.split("/");
+          const groupKey = parts.length > 1 ? parts[0] : "root";
+          const groupLabel = GROUP_LABELS[groupKey] || groupKey;
+          const displayName = entry.name.replace(/\.html?$/i, "");
+
+          results.push({
+            groupKey,
+            groupLabel,
+            name: displayName,
+            path: entry.path
+          });
+        }
+      }
+      return results;
+    }
+
+    async function init() {
+      if (!owner || !repo) {
+        statusEl.textContent = "Hãy mở qua đường link GitHub Pages để tự động quét các nhóm file.";
+        return;
+      }
+      try {
+        groupedItems = await scanPath("");
+        renderGroups(groupedItems);
+      } catch (e) {
+        statusEl.textContent = "Không thể tải danh sách. Hãy kiểm tra kho lưu trữ đã bật Public và GitHub Pages chưa.";
+      }
+    }
+
+    function renderGroups(items) {
+      containerEl.innerHTML = "";
+      if (items.length === 0) {
+        statusEl.style.display = "block";
+        statusEl.textContent = "Chưa có file HTML nào phù hợp.";
+        return;
+      }
+      statusEl.style.display = "none";
+
+      // Gom nhóm theo groupKey
+      const map = new Map();
+      for (const item of items) {
+        if (!map.has(item.groupKey)) {
+          map.set(item.groupKey, { label: item.groupLabel, files: [] });
+        }
+        map.get(item.groupKey).files.push(item);
+      }
+
+      map.forEach((group) => {
+        const section = document.createElement("div");
+        section.className = "group-section";
+
+        const title = document.createElement("div");
+        title.className = "group-title";
+        title.textContent = group.label;
+        section.appendChild(title);
+
+        const ul = document.createElement("ul");
+        ul.className = "file-list";
+
+        group.files.forEach((f) => {
+          const li = document.createElement("li");
+          li.className = "file-item";
+          const encodedPath = f.path.split("/").map(encodeURIComponent).join("/");
+          li.innerHTML = `
+            <a href="./${encodedPath}" target="_blank">
+              <span>${f.name}</span>
+              <span class="badge">Mở trang ↗</span>
+            </a>
+          `;
+          ul.appendChild(li);
+        });
+
+        section.appendChild(ul);
+        containerEl.appendChild(section);
+      });
+    }
+
+    searchBox.addEventListener("input", (e) => {
+      const q = e.target.value.toLowerCase().trim();
+      if (!q) {
+        renderGroups(groupedItems);
+        return;
+      }
+      const filtered = groupedItems.filter(
+        (item) => item.name.toLowerCase().includes(q) || item.groupLabel.toLowerCase().includes(q)
+      );
+      renderGroups(filtered);
+    });
+
+    init();
+  </script>
+
+</body>
+</html>
